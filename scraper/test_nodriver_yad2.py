@@ -3,7 +3,8 @@ import nodriver as uc
 
 async def main():
     print("Launching nodriver (Chrome stealth without CDP automation flags)...")
-    browser = await uc.start(headless=False)
+    config = uc.Config(sandbox=False)
+    browser = await uc.start(config=config, headless=False)
 
     print("Navigating to Yad2 rent page...")
     page = await browser.get('https://www.yad2.co.il/realestate/rent')

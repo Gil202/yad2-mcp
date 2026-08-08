@@ -219,7 +219,7 @@ def send_ingest_payload(items, rent_count, sale_count):
 async def main():
     print("[Scraper] Starting Yad2 Stealth Scraper (nodriver Chrome engine)...")
     
-    config = uc.Config()
+    config = uc.Config(sandbox=False)
     if os.path.exists("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
         config.browser_executable_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     config.user_data_dir = tempfile.mkdtemp()

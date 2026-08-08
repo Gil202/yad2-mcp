@@ -2,7 +2,7 @@ import asyncio
 import nodriver as uc
 
 async def test():
-    config = uc.Config()
+    config = uc.Config(sandbox=False)
     config.browser_executable_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     config.user_data_dir = "/tmp/nodriver_yad2_profile"
     
