@@ -1,0 +1,13 @@
+name = "yad2-mcp"
+main = "src/index.ts"
+compatibility_date = "2024-10-22"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yad2-db"
+database_id = "6e487b6f-ad73-4f33-ae4a-a3253ccc2b66"
+
+[vars]
+ENVIRONMENT = "production"
+# INGEST_SECRET should be set via `wrangler secret put INGEST_SECRET`

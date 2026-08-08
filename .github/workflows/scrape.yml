@@ -1,0 +1,40 @@
+name: Yad2 Daily Apartment Scraper
+
+on:
+  schedule:
+    # Runs every day at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allows manual trigger anytime from GitHub UI
+
+jobs:
+  scrape-and-ingest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install System Dependencies & Virtual Framebuffer (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb google-chrome-stable
+
+      - name: Install Python Scraper Dependencies
+        run: |
+          cd scraper
+          python -m pip install --upgrade pip
+          pip install nodriver curl_cffi requests
+
+      - name: Run Stealth Scraper under Xvfb (Virtual Display)
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
+        run: |
+          cd scraper
+          xvfb-run --auto-servernum python yad2_nodriver_scraper.py
