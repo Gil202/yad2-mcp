@@ -20,10 +20,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install System Dependencies & Virtual Framebuffer (Xvfb)
+      - name: Setup Google Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install System Dependencies & Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb google-chrome-stable
+          sudo apt-get install -y xvfb dbus-x11
 
       - name: Install Python Scraper Dependencies
         run: |
@@ -31,10 +36,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install nodriver curl_cffi requests
 
-      - name: Run Stealth Scraper under Xvfb (Virtual Display)
+      - name: Run Stealth Scraper
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
         run: |
           cd scraper
-          xvfb-run -a --server-args="-screen 0 1920x1080x24 -ac +extension RANDR" python yad2_nodriver_scraper.py
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension RANDR &
+          export DISPLAY=:99
+          python yad2_nodriver_scraper.py

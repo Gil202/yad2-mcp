@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import tempfile
 import datetime
 import urllib.request
@@ -216,29 +217,52 @@ def send_ingest_payload(items, rent_count, sale_count):
         print("[Ingest] Note: Ingestion skipped/offline:", e)
         return None
 
+async def launch_browser(max_retries=3):
+    chrome_bin = None
+    if os.getenv("CHROME_PATH") and os.path.exists(os.getenv("CHROME_PATH")):
+        chrome_bin = os.getenv("CHROME_PATH")
+    elif os.path.exists("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
+        chrome_bin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    elif shutil.which("google-chrome"):
+        chrome_bin = shutil.which("google-chrome")
+    elif shutil.which("google-chrome-stable"):
+        chrome_bin = shutil.which("google-chrome-stable")
+    elif shutil.which("chromium-browser"):
+        chrome_bin = shutil.which("chromium-browser")
+    elif shutil.which("chromium"):
+        chrome_bin = shutil.which("chromium")
+
+    print(f"[Scraper] Resolved Chrome binary path: {chrome_bin}")
+
+    for attempt in range(1, max_retries + 1):
+        print(f"[Scraper] Initializing nodriver Chrome session (Attempt {attempt}/{max_retries})...")
+        try:
+            config = uc.Config(sandbox=False)
+            config.add_argument("--disable-gpu")
+            config.add_argument("--disable-software-rasterizer")
+            config.add_argument("--window-size=1920,1080")
+            config.add_argument("--start-maximized")
+            config.add_argument("--no-first-run")
+            config.add_argument("--disable-dev-shm-usage")
+            config.add_argument("--disable-setuid-sandbox")
+
+            if chrome_bin:
+                config.browser_executable_path = chrome_bin
+
+            config.user_data_dir = tempfile.mkdtemp(prefix="yad2_chrome_")
+
+            browser = await uc.start(config=config, headless=False)
+            print("[Scraper] Chrome browser connected successfully!")
+            return browser
+        except Exception as e:
+            print(f"[Scraper] Attempt {attempt} failed to start browser: {e}")
+            if attempt == max_retries:
+                raise
+            await asyncio.sleep(3)
+
 async def main():
     print("[Scraper] Starting Yad2 Stealth Scraper (nodriver Chrome engine)...")
-    
-    config = uc.Config(sandbox=False)
-    config.add_argument("--disable-gpu")
-    config.add_argument("--disable-software-rasterizer")
-    config.add_argument("--window-size=1920,1080")
-    config.add_argument("--start-maximized")
-
-    if os.path.exists("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
-        config.browser_executable_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    elif os.path.exists("/usr/bin/google-chrome"):
-        config.browser_executable_path = "/usr/bin/google-chrome"
-    elif os.path.exists("/usr/bin/google-chrome-stable"):
-        config.browser_executable_path = "/usr/bin/google-chrome-stable"
-    elif os.path.exists("/usr/bin/chromium-browser"):
-        config.browser_executable_path = "/usr/bin/chromium-browser"
-    elif os.path.exists("/usr/bin/chromium"):
-        config.browser_executable_path = "/usr/bin/chromium"
-
-    config.user_data_dir = tempfile.mkdtemp()
-
-    browser = await uc.start(config=config, headless=False)
+    browser = await launch_browser()
 
     try:
         rent_items = await scrape_category(browser, "rent")
