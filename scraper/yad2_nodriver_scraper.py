@@ -62,6 +62,63 @@ def extract_attributes_from_lines_and_text(lines, text=""):
         "air_conditioning": any(kw in combined for kw in ["מזגן", "מיזוג"]),
     }
 
+async def wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
+    """
+    Waits for Yad2 security challenge (אבטחת אתר / Radware / ShieldSquare)
+    to execute client-side JS proof-of-work calculations and auto-redirect to the listings.
+    """
+    print(f"[Scraper] Waiting for {category_type.upper()} page and security challenge resolution (up to {max_wait_seconds}s)...")
+    for second in range(1, max_wait_seconds + 1):
+        await asyncio.sleep(1)
+
+        # Micro-scrolling to simulate real human activity and trigger JS events
+        if second % 3 == 0:
+            try:
+                await page.evaluate("window.scrollBy(0, 20); setTimeout(() => window.scrollBy(0, -20), 200);")
+            except Exception:
+                pass
+
+        try:
+            status = await page.evaluate("""
+                (() => {
+                    const title = document.title || '';
+                    const items = document.querySelectorAll('a[href*="/item/"]').length;
+                    const isSecurity = title.includes('אבטחת אתר') || 
+                                       title.includes('Radware') || 
+                                       title.includes('ShieldSquare') || 
+                                       title.includes('Captcha') || 
+                                       title.includes('Just a moment') ||
+                                       title.includes('Attention Required') ||
+                                       title.includes('Robot Check');
+                    return {
+                        title: title,
+                        itemsCount: items,
+                        isSecurity: isSecurity
+                    };
+                })()
+            """)
+
+            title = status.get("title", "")
+            items_count = status.get("itemsCount", 0)
+            is_security = status.get("isSecurity", False)
+
+            if not is_security and (items_count > 0 or "דירות" in title or "יד2" in title):
+                print(f"[Scraper] Challenge cleared at {second}s! Active Page Title: '{title}', Visible listings: {items_count}")
+                return True
+            else:
+                if second % 5 == 0 or second == 1:
+                    print(f"[Scraper] [{second}s/{max_wait_seconds}s] Security challenge in progress... Page Title: '{title}'")
+        except Exception as e:
+            if second % 5 == 0:
+                print(f"[Scraper] [{second}s] Polling page status: {e}")
+
+    try:
+        final_title = await page.evaluate("document.title")
+        print(f"[Scraper] Warning: Challenge did not clear within {max_wait_seconds}s. Final Title: '{final_title}'")
+    except Exception:
+        pass
+    return False
+
 async def scrape_category(browser, category_type):
     url = (
         "https://www.yad2.co.il/realestate/rent"
@@ -71,23 +128,13 @@ async def scrape_category(browser, category_type):
     print(f"[Scraper] Navigating to Yad2 ({category_type.upper()}): {url}")
     page = await browser.get(url)
 
-    await asyncio.sleep(5)
+    # Wait for the Radware/ShieldSquare security challenge to compute and redirect
+    await wait_for_yad2_listings(page, category_type, max_wait_seconds=40)
 
-    title = await page.evaluate("document.title")
-    print(f"[Scraper] Page loaded. Title: '{title}'")
-
-    if "Radware" in title or "Captcha" in title:
-        print("[Scraper] Waiting for Radware / ShieldSquare challenge auto-redirect...")
-        await asyncio.sleep(6)
-        title = await page.evaluate("document.title")
-
-    if "Radware" in title or "Captcha" in title:
-        print(f"[Scraper] Warning: Radware block present for {category_type}")
-        return []
-
-    # Scroll down to ensure content & lazy images render
-    await page.evaluate("window.scrollBy(0, 1000)")
-    await asyncio.sleep(2)
+    # Scroll down progressively to ensure all lazy-loaded cards and images render
+    for _ in range(3):
+        await page.evaluate("window.scrollBy(0, 800)")
+        await asyncio.sleep(1.5)
 
     # Use JSON.stringify in page.evaluate so nodriver returns a clean JSON string
     json_str = await page.evaluate("""
@@ -102,8 +149,10 @@ async def scrape_category(browser, category_type):
                 seen.add(href);
 
                 let card = a;
-                for (let i = 0; i < 4; i++) {
-                    if (card.parentElement) card = card.parentElement;
+                for (let i = 0; i < 5; i++) {
+                    if (card.parentElement && (card.parentElement.innerText || '').length > (card.innerText || '').length) {
+                        card = card.parentElement;
+                    }
                 }
 
                 const text = card.innerText || '';
@@ -237,7 +286,7 @@ async def launch_browser(max_retries=3):
     for attempt in range(1, max_retries + 1):
         print(f"[Scraper] Initializing nodriver Chrome session (Attempt {attempt}/{max_retries})...")
         try:
-            config = uc.Config(sandbox=False)
+            config = uc.Config(sandbox=False, lang="he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7")
             config.add_argument("--disable-gpu")
             config.add_argument("--disable-software-rasterizer")
             config.add_argument("--window-size=1920,1080")
