@@ -220,8 +220,22 @@ async def main():
     print("[Scraper] Starting Yad2 Stealth Scraper (nodriver Chrome engine)...")
     
     config = uc.Config(sandbox=False)
+    config.add_argument("--disable-gpu")
+    config.add_argument("--disable-software-rasterizer")
+    config.add_argument("--window-size=1920,1080")
+    config.add_argument("--start-maximized")
+
     if os.path.exists("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
         config.browser_executable_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    elif os.path.exists("/usr/bin/google-chrome"):
+        config.browser_executable_path = "/usr/bin/google-chrome"
+    elif os.path.exists("/usr/bin/google-chrome-stable"):
+        config.browser_executable_path = "/usr/bin/google-chrome-stable"
+    elif os.path.exists("/usr/bin/chromium-browser"):
+        config.browser_executable_path = "/usr/bin/chromium-browser"
+    elif os.path.exists("/usr/bin/chromium"):
+        config.browser_executable_path = "/usr/bin/chromium"
+
     config.user_data_dir = tempfile.mkdtemp()
 
     browser = await uc.start(config=config, headless=False)

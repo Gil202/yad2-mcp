@@ -37,4 +37,4 @@ jobs:
           INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
         run: |
           cd scraper
-          xvfb-run --auto-servernum python yad2_nodriver_scraper.py
+          xvfb-run -a --server-args="-screen 0 1920x1080x24 -ac +extension RANDR" python yad2_nodriver_scraper.py
