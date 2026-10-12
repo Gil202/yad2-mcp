@@ -1,5 +1,10 @@
 # Yad2 Real Estate Scraper & Cloudflare Worker MCP Server 🏠🤖
 
+For the current ingestion fix, persistent history, Holon/Bat Yam/Azor searches,
+and scheduled email configuration, see [monitor setup](docs/monitor-setup.md).
+Initialize a fresh database with `schema.sql`, then apply D1 migrations before
+deploying the current Worker. Existing databases need only the additive migrations.
+
 An open-source, 100% free solution for scraping Yad2 real estate listings (apartments for **rent** and **sale**) and serving them through an **MCP (Model Context Protocol)** server hosted on **Cloudflare Workers**.
 
 Designed for AI agents (Claude Desktop, Cursor, Gemini, ChatGPT Actions) to search, filter, and inspect apartments with direct links to original Yad2 notices.

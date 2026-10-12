@@ -5,12 +5,9 @@ import re
 import shutil
 import tempfile
 import datetime
-import urllib.request
-import urllib.parse
 import nodriver as uc
-
-WORKER_URL = os.getenv("WORKER_URL", "http://localhost:8787")
-INGEST_SECRET = os.getenv("INGEST_SECRET", "dev_ingest_secret_key")
+from ingest_http import ingest_config, send_payload
+from search_config import load_searches, card_matches_city, card_price
 
 def parse_price(val):
     if not val:
@@ -27,7 +24,7 @@ def parse_number(val):
     return float(match.group()) if match else 0.0
 
 def extract_specs_from_lines(lines):
-    rooms = 3.0
+    rooms = 0.0
     floor = None
     sqm = None
 
@@ -119,8 +116,8 @@ async def wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
         pass
     return False
 
-async def scrape_category(browser, category_type):
-    url = (
+async def scrape_category(browser, category_type, search=None):
+    url = search["url"] if search else (
         "https://www.yad2.co.il/realestate/rent"
         if category_type == "rent"
         else "https://www.yad2.co.il/realestate/forsale"
@@ -129,7 +126,8 @@ async def scrape_category(browser, category_type):
     page = await browser.get(url)
 
     # Wait for the Radware/ShieldSquare security challenge to compute and redirect
-    await wait_for_yad2_listings(page, category_type, max_wait_seconds=40)
+    if not await wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
+        raise RuntimeError("Yad2 page was not ready; refusing to record a successful scrape")
 
     # Scroll down progressively to ensure all lazy-loaded cards and images render
     for _ in range(3):
@@ -149,10 +147,11 @@ async def scrape_category(browser, category_type):
                 seen.add(href);
 
                 let card = a;
-                for (let i = 0; i < 5; i++) {
-                    if (card.parentElement && (card.parentElement.innerText || '').length > (card.innerText || '').length) {
-                        card = card.parentElement;
-                    }
+                for (let i = 0; i < 6 && card.parentElement; i++) {
+                    const parent = card.parentElement;
+                    const ids = new Set(Array.from(parent.querySelectorAll('a[href*="/item/"]')).map(link => link.href.split('?')[0]));
+                    if (ids.size > 1) break;
+                    card = parent;
                 }
 
                 const text = card.innerText || '';
@@ -198,9 +197,11 @@ async def scrape_category(browser, category_type):
 
             lines = item.get("lines", [])
             card_text = item.get("text", "")
+            if search and not card_matches_city(lines, search["city"]):
+                continue
 
-            price_val = parse_price(item.get("price"))
-            city_val = item.get("city") or "ישראל"
+            price_val = card_price(card_text)
+            city_val = search["city"] if search else (item.get("city") or "ישראל")
             address_val = item.get("address") or (lines[2] if len(lines) > 2 else None)
 
             rooms_val, floor_val, sqm_val = extract_specs_from_lines(lines)
@@ -232,9 +233,6 @@ async def scrape_category(browser, category_type):
     return parsed_apartments
 
 def send_ingest_payload(items, rent_count, sale_count):
-    endpoint = f"{WORKER_URL.rstrip('/')}/ingest"
-    print(f"\n[Ingest] Transmitting {len(items)} listings to Cloudflare Worker ({endpoint})...")
-
     payload = {
         "items": items,
         "purge_previous": False,
@@ -246,25 +244,7 @@ def send_ingest_payload(items, rent_count, sale_count):
         }
     }
 
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "X-Ingest-Secret": INGEST_SECRET,
-            "Authorization": f"Bearer {INGEST_SECRET}"
-        },
-        method="POST"
-    )
-
-    try:
-        with urllib.request.urlopen(req) as resp:
-            resp_data = resp.read().decode("utf-8")
-            print("[Ingest] Response:", resp_data)
-            return json.loads(resp_data)
-    except Exception as e:
-        print("[Ingest] Note: Ingestion skipped/offline:", e)
-        return None
+    return send_payload(payload)
 
 async def launch_browser(max_retries=3):
     chrome_bin = None
@@ -310,19 +290,26 @@ async def launch_browser(max_retries=3):
             await asyncio.sleep(3)
 
 async def main():
+    ingest_config()  # Fail before launching Chrome when CI secrets are missing.
+    searches = load_searches()
     print("[Scraper] Starting Yad2 Stealth Scraper (nodriver Chrome engine)...")
     browser = await launch_browser()
 
     try:
-        rent_items = await scrape_category(browser, "rent")
+        rent_items = []
+        sale_items = []
+        for search in searches:
+            items = await scrape_category(browser, search["type"], search)
+            if not items:
+                print(f"[Scraper] No matching cards for {search['city']} ({search['type']}); inspect page if unexpected")
+            (rent_items if search["type"] == "rent" else sale_items).extend(items)
         print(f"[Scraper] Successfully scraped {len(rent_items)} rent apartments")
 
         await asyncio.sleep(3)
 
-        sale_items = await scrape_category(browser, "sale")
         print(f"[Scraper] Successfully scraped {len(sale_items)} sale apartments")
 
-        all_items = rent_items + sale_items
+        all_items = list({item["id"]: item for item in rent_items + sale_items}.values())
         print(f"\n==========================================")
         print(f"SCRAPE RUN SUMMARY: Total Listings Scraped: {len(all_items)}")
         print(f"Rent Listings: {len(rent_items)} | Sale Listings: {len(sale_items)}")
@@ -337,7 +324,7 @@ async def main():
 
             send_ingest_payload(all_items, len(rent_items), len(sale_items))
         else:
-            print("[Scraper] Warning: 0 listings scraped.")
+            raise RuntimeError("No listings scraped; ingestion was not performed")
 
     finally:
         browser.stop()

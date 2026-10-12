@@ -1,8 +1,15 @@
-import { z } from 'zod';
-import { searchApartments, getApartmentById, getScrapeStats } from '../db/queries';
+import { searchApartments, getApartmentById, getScrapeStats, getListingHistory, getPriceDrops } from '../db/queries';
 import { SearchFilters } from '../types';
 
 export const TOOLS_MANIFEST = [
+  {
+    name: 'get_listing_history', description: 'Get the latest 100 observed price and core listing changes for a Yad2 ID.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  },
+  {
+    name: 'get_price_drops', description: 'Get the latest 100 price drops, optionally filtered by city (Holon, Bat Yam, Azor or Hebrew names).',
+    inputSchema: { type: 'object', properties: { city: { type: 'string' } } },
+  },
   {
     name: 'search_apartments',
     description: 'Search Yad2 real estate listings (rent or sale) by location, price, room count, and amenities. Returns matching apartments with price, specs, direct Yad2 link, and attributes.',
@@ -16,7 +23,7 @@ export const TOOLS_MANIFEST = [
         },
         city: {
           type: 'string',
-          description: 'City name in Hebrew or English (e.g., "תל אביב יפו", "חיפה", "ירושלים", "רמת גן").',
+          description: 'Exact Hebrew city name, or English alias Holon, Bat Yam, Azor.',
         },
         neighborhood: {
           type: 'string',
@@ -111,6 +118,11 @@ export const TOOLS_MANIFEST = [
 
 export async function handleCallTool(db: D1Database, name: string, args: any) {
   switch (name) {
+    case 'get_listing_history':
+      if (typeof args.id !== 'string' || !args.id) throw new Error('Listing ID is required');
+      return { content: [{ type: 'text', text: JSON.stringify(await getListingHistory(db, args.id)) }] };
+    case 'get_price_drops':
+      return { content: [{ type: 'text', text: JSON.stringify(await getPriceDrops(db, args.city)) }] };
     case 'search_apartments': {
       const filters: SearchFilters = {
         type: args.type,

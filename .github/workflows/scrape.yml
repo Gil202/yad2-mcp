@@ -7,9 +7,17 @@ on:
   workflow_dispatch:
     # Allows manual trigger anytime from GitHub UI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: yad2-scrape
+  cancel-in-progress: false
+
 jobs:
   scrape-and-ingest:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -36,10 +44,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install nodriver curl_cffi requests
 
+      - name: Test ingestion transport and search configuration
+        run: python -m unittest discover -s scraper -p 'test_monitor_*.py'
+
       - name: Run Stealth Scraper
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           INGEST_SECRET: ${{ secrets.INGEST_SECRET }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          YAD2_SEARCHES: ${{ vars.YAD2_SEARCHES }}
         run: |
           cd scraper
           google-chrome --version

@@ -1,10 +1,4 @@
-import { Apartment, SearchFilters, Env } from '../types';
-
-export async function purgeApartments(db: D1Database): Promise<{ deleted: number }> {
-  const stmt = db.prepare('DELETE FROM apartments;');
-  const res = await stmt.run();
-  return { deleted: res.meta.changes || 0 };
-}
+import { Apartment, SearchFilters } from '../types';
 
 export async function upsertApartments(
   db: D1Database,
@@ -13,8 +7,7 @@ export async function upsertApartments(
 ): Promise<{ inserted: number; updated: number; deleted?: number }> {
   let deletedCount = 0;
   if (purgePrevious) {
-    const purgeRes = await purgeApartments(db);
-    deletedCount = purgeRes.deleted;
+    throw new Error('Purging is disabled to preserve listing history');
   }
 
   if (!items || items.length === 0) {
@@ -46,7 +39,8 @@ export async function upsertApartments(
         contact_name = excluded.contact_name,
         contact_phone = excluded.contact_phone,
         attributes = excluded.attributes,
-        updated_at = excluded.updated_at;
+        updated_at = excluded.updated_at
+      WHERE julianday(excluded.updated_at) >= julianday(apartments.updated_at);
     `).bind(
       item.id,
       item.title,
@@ -92,8 +86,8 @@ export async function searchApartments(db: D1Database, filters: SearchFilters): 
   }
 
   if (filters.city) {
-    whereClauses.push('city LIKE ?');
-    params.push(`%${filters.city}%`);
+    whereClauses.push('city = ?');
+    params.push(normalizeCity(filters.city));
   }
 
   if (filters.neighborhood) {
@@ -201,6 +195,22 @@ export async function searchApartments(db: D1Database, filters: SearchFilters): 
   }));
 
   return { results, total };
+}
+
+export function normalizeCity(city: string): string {
+  const aliases: Record<string, string> = { holon: 'חולון', 'bat yam': 'בת ים', 'bat-yam': 'בת ים', azor: 'אזור' };
+  return aliases[city.trim().toLowerCase()] || city.trim();
+}
+
+export async function getListingHistory(db: D1Database, id: string) {
+  return (await db.prepare('SELECT * FROM listing_history WHERE apartment_id = ? ORDER BY id DESC LIMIT 100').bind(id).all()).results;
+}
+
+export async function getPriceDrops(db: D1Database, city?: string) {
+  const stmt = city
+    ? db.prepare("SELECT *, old_price - new_price AS drop_amount FROM listing_events WHERE kind = 'price_drop' AND city = ? ORDER BY id DESC LIMIT 100").bind(normalizeCity(city))
+    : db.prepare("SELECT *, old_price - new_price AS drop_amount FROM listing_events WHERE kind = 'price_drop' ORDER BY id DESC LIMIT 100");
+  return (await stmt.all()).results;
 }
 
 export async function getApartmentById(db: D1Database, id: string): Promise<Apartment | null> {

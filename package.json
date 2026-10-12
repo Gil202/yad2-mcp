@@ -4,6 +4,10 @@
   "description": "Yad2 Real Estate Scraper and Cloudflare Worker MCP Server",
   "main": "src/index.ts",
   "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/worker.test.cjs",
+    "d1:migrate:local": "wrangler d1 migrations apply yad2-db --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply yad2-db --remote",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "d1:init:local": "wrangler d1 execute yad2-db --local --file=./schema.sql",

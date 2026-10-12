@@ -10,4 +10,9 @@ database_id = "e5a1b397-573a-4e8e-a939-7912a3a5528b"
 
 [vars]
 ENVIRONMENT = "production"
+NOTIFICATION_CITIES = "Holon,Bat Yam,Azor"
 # INGEST_SECRET should be set via `wrangler secret put INGEST_SECRET`
+# RESEND_API_KEY, NOTIFICATION_FROM and NOTIFICATION_TO must be configured before emails are sent.
+
+[triggers]
+crons = ["0 * * * *"]

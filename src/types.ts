@@ -23,8 +23,8 @@ export interface Apartment {
   address?: string;
   price: number;
   rooms: number;
-  floor?: number;
-  square_meters?: number;
+  floor?: number | null;
+  square_meters?: number | null;
   description?: string;
   url: string; // Direct link to Yad2 listing notice
   images: string[];
@@ -71,4 +71,8 @@ export interface Env {
   DB: D1Database;
   INGEST_SECRET?: string;
   ENVIRONMENT?: string;
+  RESEND_API_KEY?: string;
+  NOTIFICATION_FROM?: string;
+  NOTIFICATION_TO?: string;
+  NOTIFICATION_CITIES?: string;
 }

@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { Env, IngestPayload } from './types';
+import { Env } from './types';
 import { upsertApartments, logScrape } from './db/queries';
 import { TOOLS_MANIFEST, handleCallTool } from './mcp/tools';
+import { ingestSchema } from './validation';
+import { sendNotifications } from './notifications';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -35,11 +37,11 @@ app.post('/ingest', async (c) => {
   }
 
   try {
-    const payload = (await c.req.json()) as IngestPayload;
-
-    if (!payload.items || !Array.isArray(payload.items)) {
-      return c.json({ error: 'Invalid payload: "items" array is required' }, 400);
-    }
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+    const parsed = ingestSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'Invalid ingestion payload', issues: parsed.error.issues.map(i => ({ path: i.path, message: i.message })) }, 400);
+    const payload = parsed.data;
 
     const purgePrevious = Boolean(payload.purge_previous);
     const { inserted, updated, deleted } = await upsertApartments(c.env.DB, payload.items, purgePrevious);
@@ -127,4 +129,9 @@ app.get('/sse', (c) => {
   return c.text('MCP SSE Endpoint Ready. Send JSON-RPC requests to POST /mcp');
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: (_controller: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(sendNotifications(env));
+  },
+};

@@ -270,13 +270,14 @@ export async function runScraper() {
           sale_count: saleApartments.length,
           message: `Scraped ${allItems.length} items successfully`,
         },
-        true // Purge previous listings before writing fresh weekly data
+        false // Preserve existing listings and history.
       );
     } else {
       console.warn('[Scraper] Warning: 0 items scraped. Yad2 page layout or bot detection triggered.');
     }
   } catch (err: any) {
     console.error('[Scraper] Scraper execution failed:', err);
+    process.exitCode = 1;
   } finally {
     await browser.close();
     console.log('[Scraper] Browser closed. Scraping run complete.');
