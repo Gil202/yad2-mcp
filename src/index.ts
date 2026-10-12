@@ -2,13 +2,14 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { Env } from './types';
 import { upsertApartments, logScrape } from './db/queries';
-import { TOOLS_MANIFEST, handleCallTool } from './mcp/tools';
+import { handleMcpRequest } from './mcp/server';
 import { ingestSchema } from './validation';
 import { sendNotifications } from './notifications';
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use('*', cors());
+app.use('*', cors({ allowHeaders: ['Content-Type', 'Authorization', 'X-Ingest-Secret', 'Mcp-Session-Id', 'Mcp-Protocol-Version'],
+  exposeHeaders: ['Mcp-Session-Id', 'Mcp-Protocol-Version'] }));
 
 // Health & Info route
 app.get('/health', async (c) => {
@@ -71,63 +72,7 @@ app.post('/ingest', async (c) => {
   }
 });
 
-// Standard MCP HTTP JSON-RPC endpoint (for single-call MCP client requests)
-app.post('/mcp', async (c) => {
-  try {
-    const body = await c.req.json();
-    const { jsonrpc, id, method, params } = body;
-
-    if (jsonrpc !== '2.0') {
-      return c.json({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } }, 400);
-    }
-
-    if (method === 'initialize') {
-      return c.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          protocolVersion: '2024-11-05',
-          capabilities: {
-            tools: {},
-          },
-          serverInfo: {
-            name: 'yad2-mcp-server',
-            version: '1.0.0',
-          },
-        },
-      });
-    }
-
-    if (method === 'tools/list') {
-      return c.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          tools: TOOLS_MANIFEST,
-        },
-      });
-    }
-
-    if (method === 'tools/call') {
-      const { name, arguments: toolArgs } = params || {};
-      const response = await handleCallTool(c.env.DB, name, toolArgs || {});
-      return c.json({
-        jsonrpc: '2.0',
-        id,
-        result: response,
-      });
-    }
-
-    return c.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } }, 404);
-  } catch (err: any) {
-    return c.json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: err.message } }, 500);
-  }
-});
-
-// Standard MCP Server-Sent Events (SSE) endpoint
-app.get('/sse', (c) => {
-  return c.text('MCP SSE Endpoint Ready. Send JSON-RPC requests to POST /mcp');
-});
+app.all('/mcp', c => handleMcpRequest(c.req.raw as unknown as Request, c.env.DB));
 
 export default {
   fetch: app.fetch,

@@ -4,6 +4,7 @@ For the current ingestion fix, persistent history, Holon/Bat Yam/Azor searches,
 and scheduled email configuration, see [monitor setup](docs/monitor-setup.md).
 Initialize a fresh database with `schema.sql`, then apply D1 migrations before
 deploying the current Worker. Existing databases need only the additive migrations.
+For direct ChatGPT access, see [custom plugin setup](docs/chatgpt-plugin.md).
 
 An open-source, 100% free solution for scraping Yad2 real estate listings (apartments for **rent** and **sale**) and serving them through an **MCP (Model Context Protocol)** server hosted on **Cloudflare Workers**.
 

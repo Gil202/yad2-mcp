@@ -75,7 +75,7 @@ test('history and price drops survive retries, price increases and stale scrapes
 });
 test('English city searches match exact Hebrew cities and expose history', async () => {
   const rpc = async (name, args) => (await (await mf.dispatchFetch('http://localhost/mcp', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   })).json()).result;
   const result = JSON.parse((await rpc('search_apartments', { city: 'Holon' })).content[0].text);
@@ -83,6 +83,39 @@ test('English city searches match exact Hebrew cities and expose history', async
   assert.equal(JSON.parse((await rpc('search_apartments', { city: 'Bat Yam' })).content[0].text).total, 0);
   assert.equal(JSON.parse((await rpc('get_price_drops', { city: 'Holon' })).content[0].text)[0].drop_amount, 500);
   assert.equal(JSON.parse((await rpc('get_listing_history', { id: 'test-1' })).content[0].text).length, 3);
+});
+
+test('official MCP client initializes, discovers read-only tools and queries D1 over Streamable HTTP', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 'integration-test', version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
+    fetch: (url, init) => mf.dispatchFetch(String(url), init),
+  });
+  try {
+    await client.connect(transport);
+    const list = await client.listTools();
+    assert.equal(list.tools.length, 5);
+    assert.ok(list.tools.every(t => t.annotations.readOnlyHint && !t.annotations.destructiveHint));
+    const result = await client.callTool({ name: 'search_apartments', arguments: { city: 'Holon', type: 'rent' } });
+    assert.equal(JSON.parse(result.content[0].text).total, 1);
+    await assert.rejects(client.callTool({ name: 'search_apartments', arguments: { limit: -1 } }), /Invalid tool arguments/);
+    await assert.rejects(client.callTool({ name: 'unknown', arguments: {} }), /Unknown listing tool/);
+  } finally { await client.close(); }
+});
+
+test('MCP notifications, protocol validation and stateless HTTP methods are handled correctly', async () => {
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
+  const notification = await mf.dispatchFetch('http://localhost/mcp', { method: 'POST', headers,
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
+  assert.equal(notification.status, 202);
+  assert.equal(await notification.text(), '');
+  const get = await mf.dispatchFetch('http://localhost/mcp', { headers: { Accept: 'text/event-stream' } });
+  assert.equal(get.status, 405);
+  const invalid = await mf.dispatchFetch('http://localhost/mcp', { method: 'POST',
+    headers: { ...headers, 'Mcp-Protocol-Version': 'invalid' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+  assert.equal(invalid.status, 400);
 });
 test('email failure stays queued; success marks sent; repeats send nothing; no secrets disable delivery', async () => {
   const env = { DB: db, RESEND_API_KEY: 'test-only-key', NOTIFICATION_FROM: 'test@example.com',
