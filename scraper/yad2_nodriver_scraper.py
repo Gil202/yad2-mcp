@@ -76,7 +76,7 @@ async def wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
                 pass
 
         try:
-            status = await page.evaluate("""
+            status_json = await page.evaluate("""
                 (() => {
                     const title = document.title || '';
                     const items = document.querySelectorAll('a[href*="/item/"]').length;
@@ -87,13 +87,14 @@ async def wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
                                        title.includes('Just a moment') ||
                                        title.includes('Attention Required') ||
                                        title.includes('Robot Check');
-                    return {
+                    return JSON.stringify({
                         title: title,
                         itemsCount: items,
                         isSecurity: isSecurity
-                    };
+                    });
                 })()
             """)
+            status = json.loads(status_json)
 
             title = status.get("title", "")
             items_count = status.get("itemsCount", 0)
