@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "yad2-db"
-database_id = "6e487b6f-ad73-4f33-ae4a-a3253ccc2b66"
+database_id = "e5a1b397-573a-4e8e-a939-7912a3a5528b"
 
 [vars]
 ENVIRONMENT = "production"

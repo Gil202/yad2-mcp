@@ -237,7 +237,7 @@ def send_ingest_payload(items, rent_count, sale_count):
 
     payload = {
         "items": items,
-        "purge_previous": True,
+        "purge_previous": False,
         "log": {
             "status": "success",
             "rent_count": rent_count,

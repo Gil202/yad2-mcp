@@ -30,7 +30,7 @@ app.post('/ingest', async (c) => {
   const secretHeader = c.req.header('X-Ingest-Secret') || c.req.header('Authorization')?.replace('Bearer ', '');
   const expectedSecret = c.env.INGEST_SECRET;
 
-  if (expectedSecret && secretHeader !== expectedSecret) {
+  if (!expectedSecret || secretHeader !== expectedSecret) {
     return c.json({ error: 'Unauthorized: Invalid ingestion secret' }, 401);
   }
 
