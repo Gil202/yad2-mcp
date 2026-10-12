@@ -43,7 +43,9 @@ MCP tools include `get_listing_history` (ID, latest 100 changes) and
 exact city matching and accepts Hebrew names or Holon, Bat Yam and Azor.
 
 `scraper/searches.json` configures rent and sale searches for Holon (6600),
-Bat Yam (6200), and Azor (565). Azor's code is the official locality code:
+Bat Yam (6200), and Azor (0565). The zero-padded Azor parameter needs live
+verification; the unpadded parameter fell back to an unfiltered page.
+Azor's numeric code is the official locality code:
 https://www.cbs.gov.il/he/publications/doclib/2022/local_authorities20_1879/425_0565.pdf.
 Its Yad2 query still needs confirmation in a live scraper run. Cards must have
 a matching city location line; recommendations from other cities are excluded.

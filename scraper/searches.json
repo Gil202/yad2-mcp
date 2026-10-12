@@ -3,6 +3,6 @@
   {"city":"חולון","type":"sale","url":"https://www.yad2.co.il/realestate/forsale?city=6600"},
   {"city":"בת ים","type":"rent","url":"https://www.yad2.co.il/realestate/rent?city=6200"},
   {"city":"בת ים","type":"sale","url":"https://www.yad2.co.il/realestate/forsale?city=6200"},
-  {"city":"אזור","type":"rent","url":"https://www.yad2.co.il/realestate/rent?city=565"},
-  {"city":"אזור","type":"sale","url":"https://www.yad2.co.il/realestate/forsale?city=565"}
+  {"city":"אזור","type":"rent","url":"https://www.yad2.co.il/realestate/rent?city=0565"},
+  {"city":"אזור","type":"sale","url":"https://www.yad2.co.il/realestate/forsale?city=0565"}
 ]
