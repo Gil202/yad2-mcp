@@ -8,6 +8,7 @@ import datetime
 import nodriver as uc
 from ingest_http import ingest_config, send_payload
 from search_config import load_searches, card_matches_city, card_price, listing_page_ready
+from pagination import collect_pages
 
 def parse_price(val):
     if not val:
@@ -123,6 +124,13 @@ async def scrape_category(browser, category_type, search=None):
         if category_type == "rent"
         else "https://www.yad2.co.il/realestate/forsale"
     )
+    async def read_page(page_url):
+        return await scrape_page(browser, category_type, page_url, search)
+
+    return await collect_pages(url, read_page)
+
+
+async def scrape_page(browser, category_type, url, search):
     print(f"[Scraper] Navigating to Yad2 ({category_type.upper()}): {url}")
     page = await browser.get(url)
 
@@ -144,8 +152,9 @@ async def scrape_category(browser, category_type, search=None):
 
             links.forEach((a, idx) => {
                 const href = a.href;
-                if (seen.has(href)) return;
-                seen.add(href);
+                const listingId = href.split('?')[0].split('/').pop();
+                if (seen.has(listingId)) return;
+                seen.add(listingId);
 
                 let card = a;
                 for (let i = 0; i < 6 && card.parentElement; i++) {
@@ -173,15 +182,31 @@ async def scrape_category(browser, category_type, search=None):
                 });
             });
 
-            return JSON.stringify(items);
+            const text = document.body.innerText || '';
+            const totalMatch = text.match(/([\\d,]+)\\s*תוצאות/);
+            const next = Array.from(document.querySelectorAll('a')).find(a =>
+                (a.getAttribute('aria-label') || '').trim() === 'עמוד הבא' &&
+                a.getAttribute('aria-disabled') !== 'true');
+            const pageNumbers = Array.from(document.querySelectorAll('a')).map(a => {
+                const label = a.getAttribute('aria-label') || '';
+                const match = label.match(/^עמוד\\s+(\\d+)$/);
+                return match ? Number(match[1]) : 0;
+            });
+            return JSON.stringify({items, state: {
+                url: location.href,
+                total: totalMatch ? Number(totalMatch[1].replaceAll(',', '')) : null,
+                next_url: next ? next.href : null,
+                last_page: Math.max(1, ...pageNumbers)
+            }});
         })()
     """)
 
     extracted_items = []
     try:
-        extracted_items = json.loads(json_str) if json_str else []
+        extracted = json.loads(json_str)
+        extracted_items = extracted['items']
     except Exception as e:
-        print(f"[Scraper] JSON parse error: {e}")
+        raise RuntimeError('Could not read listing page; scrape is incomplete') from e
 
     parsed_apartments = []
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -231,7 +256,7 @@ async def scrape_category(browser, category_type, search=None):
                 "updated_at": now_iso
             })
 
-    return parsed_apartments
+    return parsed_apartments, extracted['state']
 
 def send_ingest_payload(items, rent_count, sale_count):
     payload = {

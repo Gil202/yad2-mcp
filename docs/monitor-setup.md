@@ -56,8 +56,15 @@ Azor's numeric code is the official locality code:
 https://www.cbs.gov.il/he/publications/doclib/2022/local_authorities20_1879/425_0565.pdf.
 Cards must have
 a matching city location line; recommendations from other cities are excluded.
-Only the loaded search-page cards are monitored; this is not complete city
-inventory or a paginated crawl. No room/price criteria are configured yet.
+The scraper follows each search's actual next-page links through the final
+page and deduplicates cards by listing ID. It rejects repeated/skipped pages,
+redirects that lose search filters, empty pages with positive result totals,
+and missing next links before the reported final page. Collection failures
+stop ingestion rather than logging partial coverage as success. Each page and
+completed search logs collected counts alongside the site's result count;
+promoted cards, project cards and changes during a crawl can cause differences.
+The workflow allows 90 minutes for the six paginated searches. No room/price
+criteria are configured yet. Existing inventory and history remain preserved.
 
 Override searches with the GitHub Actions **variable** `YAD2_SEARCHES` containing
 a JSON array of `{ "city": "חולון", "type": "rent", "url": "https://www.yad2.co.il/realestate/rent?city=6600" }`
