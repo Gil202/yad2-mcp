@@ -271,7 +271,9 @@ export async function getDetailQueue(db: D1Database, limit: number) {
   const rows = (await db.prepare(`SELECT * FROM apartments
     WHERE details IS NULL OR julianday(json_extract(details, '$.checked_at')) < julianday('now','-7 days')
     ORDER BY CASE WHEN type = 'sale' AND city = 'חולון' AND rooms = 3 AND price > 0 AND price <= 2800000
-      AND (floor >= 6 OR floor IS NULL) THEN 0 ELSE 1 END, floor DESC, updated_at DESC, id ASC LIMIT ?`)
+      AND (floor >= 6 OR floor IS NULL) THEN 0 ELSE 1 END,
+      CASE WHEN details IS NULL THEN 0 ELSE 1 END,
+      json_extract(details, '$.checked_at') ASC, floor DESC, updated_at DESC, id ASC LIMIT ?`)
     .bind(limit).all<any>()).results;
   return rows.map(row => ({ ...row, images: row.images ? JSON.parse(row.images) : [],
     attributes: row.attributes ? JSON.parse(row.attributes) : {}, details: row.details ? JSON.parse(row.details) : undefined }));
