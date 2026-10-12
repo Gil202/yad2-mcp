@@ -51,3 +51,24 @@ def send_payload(payload):
         raise RuntimeError(f"Ingestion HTTP {error.code}. {hint}.") from None
     except urllib.error.URLError:
         raise RuntimeError("Ingestion network failure; no successful upload was acknowledged") from None
+
+
+def get_detail_queue(limit=300):
+    url, secret = ingest_config()
+    headers = {'Accept': 'application/json', 'User-Agent': 'yad2-monitor/1.0', 'X-Ingest-Secret': secret}
+    client_id, client_secret = os.environ.get('CF_ACCESS_CLIENT_ID'), os.environ.get('CF_ACCESS_CLIENT_SECRET')
+    if bool(client_id) != bool(client_secret):
+        raise RuntimeError('Both Cloudflare Access service token variables must be set together')
+    if client_id:
+        headers.update({'CF-Access-Client-Id': client_id, 'CF-Access-Client-Secret': client_secret})
+    request = urllib.request.Request(url + f'/detail-queue?limit={limit}', headers=headers)
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(request, timeout=60) as response:
+            items = json.load(response).get('items')
+            if not isinstance(items, list):
+                raise RuntimeError('Worker returned an invalid detail backlog')
+            return items
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f'Detail queue HTTP {error.code}; check Worker access and deployment') from None
+    except urllib.error.URLError:
+        raise RuntimeError('Detail queue network failure') from None

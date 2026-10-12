@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { Env } from './types';
-import { upsertApartments, logScrape } from './db/queries';
+import { upsertApartments, logScrape, getDetailQueue } from './db/queries';
 import { handleMcpRequest } from './mcp/server';
 import { ingestSchema } from './validation';
 import { sendNotifications } from './notifications';
@@ -70,6 +70,13 @@ app.post('/ingest', async (c) => {
   } catch (err: any) {
     return c.json({ error: 'Ingestion failed', message: err.message }, 500);
   }
+});
+
+// Scraper-only backlog; never exposes ingestion credentials through MCP.
+app.get('/detail-queue', async (c) => {
+  if (!c.env.INGEST_SECRET || c.req.header('X-Ingest-Secret') !== c.env.INGEST_SECRET) return c.json({ error: 'Unauthorized' }, 401);
+  const limit = Math.min(500, Math.max(1, Number(c.req.query('limit')) || 300));
+  return c.json({ items: await getDetailQueue(c.env.DB, Math.floor(limit)) });
 });
 
 app.all('/mcp', c => handleMcpRequest(c.req.raw as unknown as Request, c.env.DB));

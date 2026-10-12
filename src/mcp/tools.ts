@@ -81,6 +81,14 @@ export const TOOLS_MANIFEST = [
           type: 'boolean',
           description: 'Filter for apartments with warehouse / storage room (מחסן).',
         },
+        has_registered_parking: { type: 'boolean', description: 'Parking explicitly advertised as registered in Tabu (חניה בטאבו). Unknown is excluded unless include_unknown is true.' },
+        has_sun_terrace: { type: 'boolean', description: 'An explicitly advertised sun terrace (מרפסת שמש), not any balcony.' },
+        min_floor: { type: 'integer', description: 'Minimum apartment floor, inclusive.' },
+        max_floor: { type: 'integer', description: 'Maximum apartment floor, inclusive.' },
+        max_building_age: { type: 'integer', description: 'Maximum building age in years, based on an advertised building year/age. Apartment age is not building age.' },
+        exclude_renewal: { type: 'boolean', description: 'Require a new building rather than a new apartment in an older renewed/TAMA building. Unknown is excluded in strict searches.' },
+        include_unknown: { type: 'boolean', description: 'Also return candidates with unconfirmed requested features, labelled needs_verification. Explicit contradictions are still excluded. Default false.' },
+        sort_by: { type: 'string', enum: ['updated', 'floor_desc', 'price_asc'], description: 'Sort by observation time, highest floor first, or lowest price first.' },
         limit: {
           type: 'number',
           description: 'Max results to return (default 20, max 100).',
@@ -141,6 +149,11 @@ export async function handleCallTool(db: D1Database, name: string, args: any) {
         has_mamad: args.has_mamad,
         has_balcony: args.has_balcony,
         has_storage: args.has_storage,
+        has_registered_parking: args.has_registered_parking,
+        has_sun_terrace: args.has_sun_terrace,
+        min_floor: args.min_floor, max_floor: args.max_floor,
+        max_building_age: args.max_building_age, exclude_renewal: args.exclude_renewal,
+        include_unknown: args.include_unknown, sort_by: args.sort_by,
         limit: args.limit || 20,
         offset: args.offset || 0,
       };
@@ -169,6 +182,9 @@ export async function handleCallTool(db: D1Database, name: string, args: any) {
                   sqm: apt.square_meters,
                   url: apt.url, // Direct link to Yad2 notice
                   attributes: apt.attributes,
+                  details: apt.details || null,
+                  possible_duplicate_ids: apt.possible_duplicate_ids,
+                  match_status: needsVerification(apt, filters) ? 'needs_verification' : 'matches_stored_claims',
                   image_preview: apt.images[0] || null,
                   updated_at: apt.updated_at,
                 })),
@@ -220,6 +236,8 @@ export async function handleCallTool(db: D1Database, name: string, args: any) {
                   total_apartments: stats.total_listings,
                   rent_apartments: stats.rent_listings,
                   sale_apartments: stats.sale_listings,
+                  detail_enriched_apartments: stats.detail_enriched,
+                  awaiting_detail_enrichment: stats.total_listings - stats.detail_enriched,
                 },
                 last_scrape_log: stats.last_scrape || 'No scrape logs recorded yet.',
               },
@@ -234,4 +252,13 @@ export async function handleCallTool(db: D1Database, name: string, args: any) {
     default:
       throw new Error(`Unknown tool name: ${name}`);
   }
+}
+
+function needsVerification(apt: import('../types').Apartment, filters: SearchFilters): boolean {
+  const features = { has_elevator: 'elevator', has_parking: 'parking', has_mamad: 'mamad',
+    has_balcony: 'balcony', has_storage: 'storage', has_registered_parking: 'parking_registered', has_sun_terrace: 'sun_terrace' };
+  return Object.entries(features).some(([filter, feature]) => filters[filter as keyof SearchFilters] !== undefined && apt.attributes[feature] == null)
+    || ((filters.min_floor !== undefined || filters.max_floor !== undefined) && apt.floor == null)
+    || (filters.max_building_age !== undefined && apt.details?.building_year == null)
+    || (!!filters.exclude_renewal && (!apt.details || apt.details.building_kind === 'unknown'));
 }

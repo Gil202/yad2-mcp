@@ -37,6 +37,7 @@ before(async () => {
   db = await mf.getD1Database('DB');
   await applySql('schema.sql');
   await applySql('migrations/0001_history.sql');
+  await applySql('migrations/0002_details.sql');
 });
 after(async () => { if (mf) await mf.dispose(); });
 
@@ -135,4 +136,49 @@ test('email failure stays queued; success marks sent; repeats send nothing; no s
   assert.equal(count, 2);
   await notifications.sendNotifications(env, success);
   assert.equal(count, 2);
+});
+
+test('detail filters, unknown candidates, floor sorting and duplicate hints work over MCP', async () => {
+  const details = { checked_at: '2026-10-12T13:00:00Z', source_url: 'https://www.yad2.co.il/item/detail-a',
+    building_year: 2025, building_kind: 'new_building', built_sqm: 65, evidence: { parking_registered: 'חניה בטאבו', sun_terrace: 'מרפסת שמש' } };
+  const a = { ...item(2040000, '2026-10-12T13:00:00Z'), id: 'detail-a', type: 'sale', address: 'חסדאי',
+    floor: 6, square_meters: 75, description: 'בניין בן שנה. חניה בטאבו ומרפסת שמש',
+    attributes: { parking: true, parking_registered: true, elevator: true, sun_terrace: true, balcony: true, storage: null }, details };
+  const b = { ...a, id: 'detail-b', price: 2080000, details: { ...details, built_sqm: 68 } };
+  const unknown = { ...a, id: 'detail-unknown', address: 'ירמיהו 18', floor: 8,
+    attributes: { parking: true, elevator: true, parking_registered: null, sun_terrace: null },
+    details: { ...details, building_year: null, building_kind: 'unknown' } };
+  const renewal = { ...a, id: 'detail-renewal', floor: 7, details: { ...details, building_year: null, building_kind: 'renewal' } };
+  assert.equal((await ingest([a, b, unknown, renewal])).status, 200);
+  const rpc = async (name, args) => JSON.parse((await (await mf.dispatchFetch('http://localhost/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+  })).json()).result.content[0].text);
+  const filters = { city: 'Holon', type: 'sale', min_rooms: 3, max_rooms: 3, max_price: 2700000,
+    min_floor: 6, max_building_age: 15, exclude_renewal: true, has_registered_parking: true,
+    has_sun_terrace: true, has_elevator: true, sort_by: 'floor_desc' };
+  const strict = await rpc('search_apartments', filters);
+  assert.deepEqual(strict.apartments.map(a => a.id), ['detail-a', 'detail-b']);
+  assert.deepEqual(strict.apartments[0].possible_duplicate_ids, ['detail-b']);
+  assert.equal(strict.apartments[0].match_status, 'matches_stored_claims');
+  const candidates = await rpc('search_apartments', { ...filters, include_unknown: true });
+  assert.equal(candidates.apartments[0].id, 'detail-unknown');
+  assert.equal(candidates.apartments[0].match_status, 'needs_verification');
+  assert.equal(candidates.total, 3); // Renewal is still excluded.
+  const explicitNo = await rpc('search_apartments', { city: 'Holon', type: 'sale', has_sun_terrace: false });
+  assert.equal(explicitNo.total, 0); // Unknown is not false.
+  await ingest([{ ...a, updated_at: '2026-10-12T14:00:00Z', details: undefined,
+    description: undefined, address: 'bad summary address', floor: null, attributes: { elevator: null } }]);
+  const saved = await rpc('get_apartment_details', { id: 'detail-a' });
+  assert.equal(saved.address, 'חסדאי'); assert.equal(saved.floor, 6);
+  assert.equal(saved.attributes.elevator, true); assert.ok(saved.description);
+  assert.deepEqual(saved.details, { ...details, checked_at: new Date(details.checked_at).toISOString() });
+  assert.deepEqual(saved.possible_duplicate_ids, ['detail-b']);
+});
+
+test('detail queue is authenticated, bounded and skips recently enriched listings', async () => {
+  assert.equal((await mf.dispatchFetch('http://localhost/detail-queue')).status, 401);
+  const queue = await (await mf.dispatchFetch('http://localhost/detail-queue?limit=1', { headers: { 'X-Ingest-Secret': 'test-only-secret' } })).json();
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0].id, 'test-1');
 });

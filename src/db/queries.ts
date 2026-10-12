@@ -21,24 +21,25 @@ export async function upsertApartments(
       INSERT INTO apartments (
         id, title, type, city, neighborhood, address, price, rooms, floor,
         square_meters, description, url, images, contact_name, contact_phone,
-        attributes, scraped_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        attributes, scraped_at, updated_at, details
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         type = excluded.type,
         city = excluded.city,
         neighborhood = excluded.neighborhood,
-        address = excluded.address,
+        address = CASE WHEN excluded.details IS NULL AND apartments.details IS NOT NULL THEN apartments.address ELSE excluded.address END,
         price = excluded.price,
         rooms = excluded.rooms,
-        floor = excluded.floor,
-        square_meters = excluded.square_meters,
-        description = excluded.description,
+        floor = CASE WHEN excluded.details IS NULL AND apartments.details IS NOT NULL THEN apartments.floor ELSE COALESCE(excluded.floor, apartments.floor) END,
+        square_meters = COALESCE(excluded.square_meters, apartments.square_meters),
+        description = COALESCE(excluded.description, apartments.description),
         url = excluded.url,
         images = excluded.images,
         contact_name = excluded.contact_name,
         contact_phone = excluded.contact_phone,
-        attributes = excluded.attributes,
+        attributes = CASE WHEN excluded.details IS NULL AND apartments.details IS NOT NULL THEN apartments.attributes ELSE excluded.attributes END,
+        details = COALESCE(excluded.details, apartments.details),
         updated_at = excluded.updated_at
       WHERE julianday(excluded.updated_at) >= julianday(apartments.updated_at);
     `).bind(
@@ -59,7 +60,8 @@ export async function upsertApartments(
       item.contact_phone || null,
       JSON.stringify(item.attributes || {}),
       item.scraped_at,
-      item.updated_at
+      item.updated_at,
+      item.details ? JSON.stringify(item.details) : null
     );
     statements.push(stmt);
   }
@@ -136,24 +138,34 @@ export async function searchApartments(db: D1Database, filters: SearchFilters): 
     params.push(filters.max_sqm);
   }
 
-  if (filters.has_elevator) {
-    whereClauses.push(`json_extract(attributes, '$.elevator') = true`);
+  const featureFilters: [keyof SearchFilters, string][] = [
+    ['has_elevator', 'elevator'], ['has_parking', 'parking'], ['has_mamad', 'mamad'],
+    ['has_balcony', 'balcony'], ['has_storage', 'storage'],
+    ['has_registered_parking', 'parking_registered'], ['has_sun_terrace', 'sun_terrace'],
+  ];
+  for (const [filter, attribute] of featureFilters) {
+    if (filters[filter] !== undefined) {
+      const value = `json_extract(attributes, '$.${attribute}')`;
+      whereClauses.push(filters.include_unknown ? `(${value} = ? OR ${value} IS NULL)` : `${value} = ?`);
+      params.push(filters[filter] ? 1 : 0);
+    }
   }
-
-  if (filters.has_parking) {
-    whereClauses.push(`json_extract(attributes, '$.parking') = true`);
+  for (const [filter, expression, comparison] of [
+    ['min_floor', 'floor', '>='], ['max_floor', 'floor', '<='],
+  ] as const) {
+    if (filters[filter] !== undefined) {
+      whereClauses.push(filters.include_unknown ? `(${expression} ${comparison} ? OR ${expression} IS NULL)` : `${expression} ${comparison} ?`);
+      params.push(filters[filter]);
+    }
   }
-
-  if (filters.has_mamad) {
-    whereClauses.push(`json_extract(attributes, '$.mamad') = true`);
+  if (filters.max_building_age !== undefined) {
+    const age = "CAST(strftime('%Y','now') AS INTEGER) - json_extract(details, '$.building_year')";
+    whereClauses.push(filters.include_unknown ? `((${age} BETWEEN 0 AND ?) OR ${age} IS NULL)` : `${age} BETWEEN 0 AND ?`);
+    params.push(filters.max_building_age);
   }
-
-  if (filters.has_balcony) {
-    whereClauses.push(`json_extract(attributes, '$.balcony') = true`);
-  }
-
-  if (filters.has_storage) {
-    whereClauses.push(`json_extract(attributes, '$.storage') = true`);
+  if (filters.exclude_renewal) {
+    const kind = "json_extract(details, '$.building_kind')";
+    whereClauses.push(filters.include_unknown ? `(${kind} IS NULL OR ${kind} != 'renewal')` : `${kind} = 'new_building'`);
   }
 
   const limit = Math.min(filters.limit || 20, 100);
@@ -168,7 +180,7 @@ export async function searchApartments(db: D1Database, filters: SearchFilters): 
 
   // Data query
   const dataStmt = db.prepare(
-    `SELECT * FROM apartments WHERE ${whereSql} ORDER BY updated_at DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM apartments WHERE ${whereSql} ORDER BY ${filters.sort_by === 'floor_desc' ? 'floor DESC, price ASC' : filters.sort_by === 'price_asc' ? 'price ASC' : 'updated_at DESC'}, id ASC LIMIT ? OFFSET ?`
   ).bind(...params, limit, offset);
 
   const { results: rawRows } = await dataStmt.all();
@@ -190,10 +202,12 @@ export async function searchApartments(db: D1Database, filters: SearchFilters): 
     contact_name: row.contact_name || undefined,
     contact_phone: row.contact_phone || undefined,
     attributes: row.attributes ? JSON.parse(row.attributes) : {},
+    details: row.details ? JSON.parse(row.details) : undefined,
     scraped_at: row.scraped_at,
     updated_at: row.updated_at,
   }));
 
+  for (const apt of results) apt.possible_duplicate_ids = await possibleDuplicates(db, apt);
   return { results, total };
 }
 
@@ -219,7 +233,7 @@ export async function getApartmentById(db: D1Database, id: string): Promise<Apar
 
   if (!row) return null;
 
-  return {
+  const apartment: Apartment = {
     id: row.id,
     title: row.title,
     type: row.type,
@@ -236,9 +250,31 @@ export async function getApartmentById(db: D1Database, id: string): Promise<Apar
     contact_name: row.contact_name || undefined,
     contact_phone: row.contact_phone || undefined,
     attributes: row.attributes ? JSON.parse(row.attributes) : {},
+    details: row.details ? JSON.parse(row.details) : undefined,
     scraped_at: row.scraped_at,
     updated_at: row.updated_at,
   };
+  apartment.possible_duplicate_ids = await possibleDuplicates(db, apartment);
+  return apartment;
+}
+
+async function possibleDuplicates(db: D1Database, apt: Apartment): Promise<string[]> {
+  if (!apt.address || apt.floor == null || !apt.details?.built_sqm || !apt.price) return [];
+  const matches = await db.prepare(`SELECT id FROM apartments WHERE id != ? AND city = ? AND address = ?
+    AND rooms = ? AND floor = ? AND price BETWEEN ? AND ?
+    AND ABS(json_extract(details, '$.built_sqm') - ?) <= 5 LIMIT 10`)
+    .bind(apt.id, apt.city, apt.address, apt.rooms, apt.floor, apt.price * .9, apt.price * 1.1, apt.details.built_sqm).all<{ id: string }>();
+  return matches.results.map(row => row.id);
+}
+
+export async function getDetailQueue(db: D1Database, limit: number) {
+  const rows = (await db.prepare(`SELECT * FROM apartments
+    WHERE details IS NULL OR julianday(json_extract(details, '$.checked_at')) < julianday('now','-7 days')
+    ORDER BY CASE WHEN type = 'sale' AND city = 'חולון' AND rooms = 3 AND price > 0 AND price <= 2800000
+      AND (floor >= 6 OR floor IS NULL) THEN 0 ELSE 1 END, floor DESC, updated_at DESC, id ASC LIMIT ?`)
+    .bind(limit).all<any>()).results;
+  return rows.map(row => ({ ...row, images: row.images ? JSON.parse(row.images) : [],
+    attributes: row.attributes ? JSON.parse(row.attributes) : {}, details: row.details ? JSON.parse(row.details) : undefined }));
 }
 
 export async function logScrape(db: D1Database, log: { status: string; rent_count: number; sale_count: number; message?: string }): Promise<void> {
@@ -253,19 +289,22 @@ export async function getScrapeStats(db: D1Database): Promise<{
   total_listings: number;
   rent_listings: number;
   sale_listings: number;
+  detail_enriched: number;
   last_scrape?: any;
 }> {
   const totalStmt = db.prepare('SELECT COUNT(*) as count FROM apartments').first<{ count: number }>();
   const rentStmt = db.prepare("SELECT COUNT(*) as count FROM apartments WHERE type = 'rent'").first<{ count: number }>();
   const saleStmt = db.prepare("SELECT COUNT(*) as count FROM apartments WHERE type = 'sale'").first<{ count: number }>();
   const lastLogStmt = db.prepare('SELECT * FROM scrape_logs ORDER BY id DESC LIMIT 1').first<any>();
+  const detailStmt = db.prepare('SELECT COUNT(*) AS count FROM apartments WHERE details IS NOT NULL').first<{ count: number }>();
 
-  const [totalRes, rentRes, saleRes, lastLog] = await Promise.all([totalStmt, rentStmt, saleStmt, lastLogStmt]);
+  const [totalRes, rentRes, saleRes, lastLog, detailRes] = await Promise.all([totalStmt, rentStmt, saleStmt, lastLogStmt, detailStmt]);
 
   return {
     total_listings: totalRes?.count || 0,
     rent_listings: rentRes?.count || 0,
     sale_listings: saleRes?.count || 0,
+    detail_enriched: detailRes?.count || 0,
     last_scrape: lastLog || null,
   };
 }

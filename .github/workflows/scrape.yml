@@ -5,7 +5,16 @@ on:
     # Runs every day at 02:00 UTC
     - cron: '0 2 * * *'
   workflow_dispatch:
-    # Allows manual trigger anytime from GitHub UI
+    inputs:
+      mode:
+        description: Inventory plus details, or detail backfill only
+        type: choice
+        options: [full, details]
+        default: full
+      detail_limit:
+        description: Maximum detail pages to refresh (1-500)
+        type: string
+        default: '300'
 
 permissions:
   contents: read
@@ -54,6 +63,8 @@ jobs:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           YAD2_SEARCHES: ${{ vars.YAD2_SEARCHES }}
+          DETAIL_ONLY: ${{ inputs.mode == 'details' && 'true' || 'false' }}
+          DETAIL_LIMIT: ${{ inputs.detail_limit || '300' }}
         run: |
           cd scraper
           google-chrome --version

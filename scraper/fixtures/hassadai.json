@@ -1,0 +1,47 @@
+{
+  "title": "דירה, חסדאי, גרין ועם, חולון | אלפי מודעות חדשות בכל יום!",
+  "url": "https://www.yad2.co.il/realestate/item/tel-aviv-area/o34hxufn",
+  "address": "חסדאי",
+  "location": "דירה, גרין ועם, חולון",
+  "description": "דירת 3 חדרים חדשה ומעוצבת ברמה גבוהה(בניין בן שנה), ממוקמת בלב העיר, בסביבה מרכזית ונוחה עם גישה מהירה ליציאות מהעיר, קאנטרי, מוסדות חינוך ושירותים קהילתיים. - כ-65 מ\"ר בנוי - מרפסת שמש - קומה גבוהה עם נוף פתוח מעל הבניינים באזור - מעלית - חניה בטאבו - ממ\"ד - דירה מוארת ומוכנה לכניסה בניין בוטיק יוקרתי עם כ-21 דיירים בלבד, כולל לובי מרשים ומטופח. שילוב של נוחות, איכות חיים ונגישות גבוהה.",
+  "specs": "3 חדרים\nקומה 6/8\n75 מ״ר",
+  "features": {
+    "elevator": true,
+    "balcony": true,
+    "storage": false,
+    "mamad": true,
+    "accessibility": true,
+    "air_conditioning": true,
+    "furniture": true,
+    "renovated": true,
+    "bars": true
+  },
+  "feature_evidence": {
+    "elevator": "מעלית: marked present on listing detail page",
+    "balcony": "מרפסת: marked present on listing detail page",
+    "storage": "מחסן: marked absent on listing detail page",
+    "mamad": "ממ\"ד: marked present on listing detail page",
+    "accessibility": "גישה לנכים: marked present on listing detail page",
+    "air_conditioning": "מיזוג: marked present on listing detail page",
+    "furniture": "מרוהטת: marked present on listing detail page",
+    "renovated": "משופצת: marked present on listing detail page",
+    "bars": "סורגים: marked present on listing detail page"
+  },
+  "parking_count": "1",
+  "built_sqm": "65 מ״ר",
+  "building_floors": "8",
+  "entrance_date": "כניסה גמישה",
+  "condition": "חדש (גרו בנכס)",
+  "images": [
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010217_20260504143902.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010954_20260504143857.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010442_20260504143858.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010360_20260504143859.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010273_20260504143858.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010184_20260504143857.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010521_20260504143900.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010703_20260504143858.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010041_20260504143906.jpeg?w=1600&h=1600&c=9",
+    "https://img.yad2.co.il/Pic/202605/04/2_5/o/y2_1pa_010066_20260504143858.jpeg?w=1600&h=1600&c=9"
+  ]
+}

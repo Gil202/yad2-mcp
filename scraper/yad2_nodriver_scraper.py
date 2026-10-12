@@ -5,8 +5,10 @@ import re
 import shutil
 import tempfile
 import datetime
+from pathlib import Path
 import nodriver as uc
-from ingest_http import ingest_config, send_payload
+from ingest_http import ingest_config, send_payload, get_detail_queue
+from details import clean, claims, parse_detail
 from search_config import load_searches, card_matches_city, card_price, listing_page_ready
 from pagination import collect_pages
 
@@ -32,6 +34,7 @@ def extract_specs_from_lines(lines):
     for line in lines:
         if not line or not isinstance(line, str):
             continue
+        line = clean(line)
 
         rooms_match = re.search(r"(\d+(?:\.\d+)?)\s*חדרים", line)
         if rooms_match:
@@ -48,17 +51,7 @@ def extract_specs_from_lines(lines):
     return rooms, floor, sqm
 
 def extract_attributes_from_lines_and_text(lines, text=""):
-    combined = (text + " " + " ".join(lines)).lower()
-    return {
-        "mamad": any(kw in combined for kw in ["ממ\"ד", "ממד", "מרחב מוגן", "ממ״ד"]),
-        "parking": any(kw in combined for kw in ["חניה", "חנייה", "חניה מקורה", "חניה פרטית"]),
-        "storage": any(kw in combined for kw in ["מחסן", "מחסן פרטי", "מחסן צמוד"]),
-        "elevator": "מעלית" in combined,
-        "balcony": any(kw in combined for kw in ["מרפסת", "מרפסת שמש"]),
-        "renovated": any(kw in combined for kw in ["משופצת", "משופץ", "משודרגת"]),
-        "furniture": any(kw in combined for kw in ["מרוהטת", "מרוהט", "ריהוט"]),
-        "air_conditioning": any(kw in combined for kw in ["מזגן", "מיזוג"]),
-    }
+    return claims(text + ' ' + ' '.join(lines))[0]
 
 async def wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
     """
@@ -174,7 +167,7 @@ async def scrape_page(browser, category_type, url, search):
                     id: href.split('?')[0].split('/').pop() || `item_${idx}`,
                     url: href,
                     city: lines[1] || 'ישראל',
-                    address: lines[2] || '',
+                    address: a.querySelector('h2')?.children[0]?.innerText.trim() || lines[2] || '',
                     price: priceMatch ? priceMatch[0] : '0 ₪',
                     image: imgEl ? imgEl.src : '',
                     text: text,
@@ -228,7 +221,8 @@ async def scrape_page(browser, category_type, url, search):
 
             price_val = card_price(card_text)
             city_val = search["city"] if search else (item.get("city") or "ישראל")
-            address_val = item.get("address") or (lines[2] if len(lines) > 2 else None)
+            # Card headers have stable address/location semantics; line positions vary with ads.
+            address_val = item.get("address") or None
 
             rooms_val, floor_val, sqm_val = extract_specs_from_lines(lines)
             attributes = extract_attributes_from_lines_and_text(lines, card_text)
@@ -271,6 +265,48 @@ def send_ingest_payload(items, rent_count, sale_count):
     }
 
     return send_payload(payload)
+
+
+async def enrich_details(browser, limit=300):
+    queue = get_detail_queue(limit)
+    script = Path(__file__).with_name('detail_page.js').read_text(encoding='utf-8')
+    batch, succeeded, failed = [], 0, 0
+    print(f'[Details] Refreshing {len(queue)} stale or missing detail pages')
+    for item in queue:
+        try:
+            # Never visit a URL supplied by listing prose; use the stored Yad2 item URL.
+            page = await browser.get(item['url'].split('?')[0])
+            raw = None
+            for _ in range(40):
+                await asyncio.sleep(1)
+                candidate = json.loads(await page.evaluate(script))
+                if candidate.get('description') and candidate.get('address'):
+                    raw = candidate
+                    break
+            if raw is None:
+                raise RuntimeError('Detail content unavailable')
+            enriched = parse_detail(item, raw)
+            batch.append(enriched)
+            succeeded += 1
+            print(f"[Details] {item['id']}: refreshed ({succeeded}/{len(queue)})")
+        except Exception as error:
+            # Do not print page bodies or credentials. Preserve the previous observation.
+            failed += 1
+            print(f"[Details] {item['id']}: unavailable ({type(error).__name__}); previous details preserved")
+        if len(batch) >= 20:
+            # Upload failures must fail the run, rather than masquerading as a missing page.
+            upload_detail_batch(batch, 'details_in_progress', succeeded, failed)
+            batch = []
+    upload_detail_batch(batch, 'details_partial' if failed else 'details_success', succeeded, failed)
+    print(f'[Details] Complete: {succeeded} refreshed, {failed} unavailable')
+
+
+def upload_detail_batch(items, status, succeeded, failed):
+    return send_payload({'items': items, 'purge_previous': False, 'log': {
+        'status': status, 'rent_count': sum(i['type'] == 'rent' for i in items),
+        'sale_count': sum(i['type'] == 'sale' for i in items),
+        'message': f'Detail enrichment: {succeeded} refreshed, {failed} unavailable; this upload contains {len(items)} listings',
+    }})
 
 async def launch_browser(max_retries=3):
     chrome_bin = None
@@ -322,6 +358,9 @@ async def main():
     browser = await launch_browser()
 
     try:
+        if os.getenv('DETAIL_ONLY') == 'true':
+            await enrich_details(browser, max(1, min(500, int(os.getenv('DETAIL_LIMIT', '300')))))
+            return
         rent_items = []
         sale_items = []
         for search in searches:
@@ -349,6 +388,7 @@ async def main():
                 print(json.dumps(all_items[1], ensure_ascii=False, indent=2))
 
             send_ingest_payload(all_items, len(rent_items), len(sale_items))
+            await enrich_details(browser, max(1, min(500, int(os.getenv('DETAIL_LIMIT', '300')))))
         else:
             raise RuntimeError("No listings scraped; ingestion was not performed")
 

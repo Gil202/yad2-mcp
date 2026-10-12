@@ -1,17 +1,31 @@
 export type TransactionType = 'rent' | 'sale';
 
 export interface ApartmentAttributes {
-  elevator?: boolean;
-  parking?: boolean;
-  mamad?: boolean; // Secure room
-  balcony?: boolean;
-  renovated?: boolean;
-  furniture?: boolean;
-  air_conditioning?: boolean;
-  bars?: boolean; // Sorigim
-  storage?: boolean; // Mahsan
-  accessibility?: boolean; // Nechut
-  [key: string]: boolean | undefined;
+  elevator?: boolean | null;
+  parking?: boolean | null;
+  mamad?: boolean | null; // Secure room
+  balcony?: boolean | null;
+  renovated?: boolean | null;
+  furniture?: boolean | null;
+  air_conditioning?: boolean | null;
+  bars?: boolean | null; // Sorigim
+  storage?: boolean | null; // Mahsan
+  accessibility?: boolean | null; // Nechut
+  parking_registered?: boolean | null;
+  sun_terrace?: boolean | null;
+  [key: string]: boolean | null | undefined;
+}
+
+export interface ApartmentDetails {
+  checked_at: string;
+  source_url: string;
+  building_year?: number | null;
+  building_kind: 'new_building' | 'renewal' | 'unknown';
+  parking_type?: 'standard' | 'mechanical' | 'robotic' | null;
+  built_sqm?: number | null;
+  terrace_sqm?: number | null;
+  entrance_date?: string | null;
+  evidence: Record<string, string>;
 }
 
 export interface Apartment {
@@ -31,6 +45,8 @@ export interface Apartment {
   contact_name?: string;
   contact_phone?: string;
   attributes: ApartmentAttributes;
+  details?: ApartmentDetails;
+  possible_duplicate_ids?: string[];
   scraped_at: string;
   updated_at: string;
 }
@@ -52,6 +68,14 @@ export interface SearchFilters {
   has_mamad?: boolean;
   has_balcony?: boolean;
   has_storage?: boolean; // Warehouse / Mahsan
+  has_registered_parking?: boolean;
+  has_sun_terrace?: boolean;
+  min_floor?: number;
+  max_floor?: number;
+  max_building_age?: number;
+  exclude_renewal?: boolean;
+  include_unknown?: boolean;
+  sort_by?: 'updated' | 'floor_desc' | 'price_asc';
   limit?: number;
   offset?: number;
 }

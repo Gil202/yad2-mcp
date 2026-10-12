@@ -72,6 +72,35 @@ objects. Leave it unset to use the checked-in three-city configuration.
 Keep `WORKER_URL` and `INGEST_SECRET` in Actions secrets; the ingestion secret
 must match the existing Worker secret. Never paste secrets into source or logs.
 
+## Detailed search and incremental enrichment
+
+Apply `migrations/0002_details.sql` once to add the detail snapshot column.
+It preserves listings/history and clears the unreliable legacy summary feature
+flags to unknown. New detail pages supply full descriptions, floor, built area,
+advertised building age, parking type, entry date and feature evidence.
+`null` or a missing feature means unknown; explicit negatives remain false.
+Card refreshes preserve previously collected detail fields. A new apartment in
+a TAMA 38/1 renewal is classified separately from a new building. Apartment age
+never becomes building age. Building year inferred from advertised age is approximate.
+
+Search supports `min_floor`, `max_floor`, `max_building_age`,
+`has_registered_parking`, `has_sun_terrace`, `exclude_renewal` and `sort_by`.
+Default searches require all specified criteria to be known. `include_unknown`
+adds candidates labelled `needs_verification`, but does not ignore known
+contradictions. Evidence is the advertiser's claim, not independent proof of
+parking registration. Similar ads are flagged as possible duplicates, never merged.
+
+The scraper refreshes up to 300 detail pages per run (configurable 1–500) and
+skips details checked within seven days. During the initial backlog it prioritizes
+Holon three-room sale listings up to 2.8M on floor 6+ or with unknown floor,
+matching the user's search. Remaining detail pages are backfilled incrementally.
+Run Actions in `details` mode to backfill without repeating the inventory crawl.
+Each 20 successful pages are uploaded; upload failures fail the run. Unavailable
+detail pages preserve existing observations and are reported in the final log.
+MCP status exposes detail coverage so a small strict result is not presented as
+complete city coverage while backfill is still running. Ingestion credentials
+are required for the bounded detail queue; it is not a public MCP write tool.
+
 ## Scheduled email
 
 The Worker polls pending events hourly (`0 * * * *`, UTC) and sends up to ten
