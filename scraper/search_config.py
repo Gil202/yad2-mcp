@@ -33,3 +33,8 @@ def card_price(text):
     cleaned = re.sub(r'ירד\s*ב\s*[-־]?\s*[\d,]+\s*₪', '', text)
     match = re.search(r'₪\s*([\d,]+)|([\d,]+)\s*₪', cleaned)
     return float((match.group(1) or match.group(2)).replace(',', '')) if match else 0.0
+
+
+def listing_page_ready(title, item_count, is_security):
+    return not is_security and (item_count > 0 or 'דירות' in title or 'יד2' in title or
+                                ('נדל' in title and ('להשכרה' in title or 'למכירה' in title)))

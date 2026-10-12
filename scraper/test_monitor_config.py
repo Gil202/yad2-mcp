@@ -1,7 +1,7 @@
 import os
 import unittest
 from unittest.mock import patch
-from search_config import load_searches, card_matches_city, card_price
+from search_config import load_searches, card_matches_city, card_price, listing_page_ready
 
 
 class SearchConfigTests(unittest.TestCase):
@@ -29,3 +29,9 @@ class SearchConfigTests(unittest.TestCase):
         self.assertEqual(card_price('ירד ב-300 ₪\n₪ 6,200\nדירה, חולון'), 6200)
         self.assertEqual(card_price('6,200 ₪\nדירה'), 6200)
         self.assertEqual(card_price('ירד ב-300 ₪\nמחיר לא צוין'), 0)
+
+    def test_city_page_titles_are_ready_even_before_lazy_cards_load(self):
+        self.assertTrue(listing_page_ready('נדל"ן להשכרה בחולון | אלפי מודעות חדשות בכל יום', 0, False))
+        self.assertTrue(listing_page_ready('נדל״ן למכירה באזור', 0, False))
+        self.assertFalse(listing_page_ready('נדל״ן להשכרה בחולון', 0, True))
+        self.assertFalse(listing_page_ready('אבטחת אתר', 0, True))

@@ -7,7 +7,7 @@ import tempfile
 import datetime
 import nodriver as uc
 from ingest_http import ingest_config, send_payload
-from search_config import load_searches, card_matches_city, card_price
+from search_config import load_searches, card_matches_city, card_price, listing_page_ready
 
 def parse_price(val):
     if not val:
@@ -99,7 +99,7 @@ async def wait_for_yad2_listings(page, category_type, max_wait_seconds=40):
             items_count = status.get("itemsCount", 0)
             is_security = status.get("isSecurity", False)
 
-            if not is_security and (items_count > 0 or "דירות" in title or "יד2" in title):
+            if listing_page_ready(title, items_count, is_security):
                 print(f"[Scraper] Challenge cleared at {second}s! Active Page Title: '{title}', Visible listings: {items_count}")
                 return True
             else:
