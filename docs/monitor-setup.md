@@ -10,6 +10,12 @@ This reproduced an edge browser-signature block before Worker authentication,
 not a D1 permission failure. Cloudflare documents the error at
 https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/.
 
+During production rollout, authenticated Actions requests then reached the
+Worker but received 401 because the configured secrets did not match. With
+explicit user approval, a new generated secret was synchronized to Actions
+and the Worker without displaying or committing its value. The subsequent
+scraper run succeeded and populated D1.
+
 The Python transport now sets an explicit application User-Agent, requires
 configured credentials, forbids credential-bearing redirects, times out, and
 raises on failed ingestion. Actions can no longer report success after an
@@ -43,11 +49,12 @@ MCP tools include `get_listing_history` (ID, latest 100 changes) and
 exact city matching and accepts Hebrew names or Holon, Bat Yam and Azor.
 
 `scraper/searches.json` configures rent and sale searches for Holon (6600),
-Bat Yam (6200), and Azor (0565). The zero-padded Azor parameter needs live
-verification; the unpadded parameter fell back to an unfiltered page.
+Bat Yam (6200), and Azor (0565). Live verification confirmed the zero-padded
+Azor parameter loads its city-specific pages; the unpadded parameter fell
+back to an unfiltered page.
 Azor's numeric code is the official locality code:
 https://www.cbs.gov.il/he/publications/doclib/2022/local_authorities20_1879/425_0565.pdf.
-Its Yad2 query still needs confirmation in a live scraper run. Cards must have
+Cards must have
 a matching city location line; recommendations from other cities are excluded.
 Only the loaded search-page cards are monitored; this is not complete city
 inventory or a paginated crawl. No room/price criteria are configured yet.
@@ -99,8 +106,15 @@ without loading credentials or writing listings.
 
 ## Publication and deployment sequence
 
-These actions affect GitHub or production and have not been executed as part
-of the local implementation:
+Production publication, the additive migration, and Worker deployment were
+completed on 2026-10-12. The successful verification run is
+https://github.com/Gil202/yad2-mcp/actions/runs/38261977220.
+Live D1 contained 362 listings (Holon 124, Bat Yam 128, Azor 110), and a sampled
+listing had a persisted history entry. Email credentials remain unset.
+The rollout also corrected browser status serialization and city-page title
+recognition, both covered by regression tests.
+
+For future rollouts, these actions affect GitHub or production:
 
 1. Review and publish the repository changes. Preserve the pre-existing changes
    to `package-lock.json` and `scraper/test-headful.ts` when staging.
