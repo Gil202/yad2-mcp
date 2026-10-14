@@ -82,6 +82,11 @@ export async function searchApartments(db: D1Database, filters: SearchFilters): 
   let whereClauses: string[] = ['1=1'];
   const params: any[] = [];
 
+  if (filters.cities?.length) {
+    whereClauses.push(`city IN (${filters.cities.map(() => '?').join(', ')})`);
+    params.push(...filters.cities.map(normalizeCity));
+  }
+
   if (filters.type) {
     whereClauses.push('type = ?');
     params.push(filters.type);

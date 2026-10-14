@@ -80,7 +80,7 @@ test('English city searches match exact Hebrew cities and expose history', async
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   })).json()).result;
   const result = JSON.parse((await rpc('search_apartments', { city: 'Holon' })).content[0].text);
-  assert.equal(result.total, 1);
+  assert.equal(result.total, 0); // Existing rental is outside the sale profile.
   assert.equal(JSON.parse((await rpc('search_apartments', { city: 'Bat Yam' })).content[0].text).total, 0);
   assert.equal(JSON.parse((await rpc('get_price_drops', { city: 'Holon' })).content[0].text)[0].drop_amount, 500);
   assert.equal(JSON.parse((await rpc('get_listing_history', { id: 'test-1' })).content[0].text).length, 3);
@@ -98,8 +98,8 @@ test('official MCP client initializes, discovers read-only tools and queries D1 
     const list = await client.listTools();
     assert.equal(list.tools.length, 5);
     assert.ok(list.tools.every(t => t.annotations.readOnlyHint && !t.annotations.destructiveHint));
-    const result = await client.callTool({ name: 'search_apartments', arguments: { city: 'Holon', type: 'rent' } });
-    assert.equal(JSON.parse(result.content[0].text).total, 1);
+    const result = await client.callTool({ name: 'search_apartments', arguments: { city: 'Holon', type: 'sale' } });
+    assert.equal(JSON.parse(result.content[0].text).total, 0);
     await assert.rejects(client.callTool({ name: 'search_apartments', arguments: { limit: -1 } }), /Invalid tool arguments/);
     await assert.rejects(client.callTool({ name: 'unknown', arguments: {} }), /Unknown listing tool/);
   } finally { await client.close(); }
@@ -138,47 +138,80 @@ test('email failure stays queued; success marks sent; repeats send nothing; no s
   assert.equal(count, 2);
 });
 
-test('detail filters, unknown candidates, floor sorting and duplicate hints work over MCP', async () => {
+test('additional detail filters and duplicate hints work within the mandatory search profile', async () => {
   const details = { checked_at: '2026-10-12T13:00:00Z', source_url: 'https://www.yad2.co.il/item/detail-a',
     building_year: 2025, building_kind: 'new_building', built_sqm: 65, evidence: { parking_registered: 'חניה בטאבו', sun_terrace: 'מרפסת שמש' } };
   const a = { ...item(2040000, '2026-10-12T13:00:00Z'), id: 'detail-a', type: 'sale', address: 'חסדאי',
-    floor: 6, square_meters: 75, description: 'בניין בן שנה. חניה בטאבו ומרפסת שמש',
+    floor: 10, square_meters: 75, description: 'בניין בן שנה. חניה בטאבו ומרפסת שמש',
     attributes: { parking: true, parking_registered: true, elevator: true, sun_terrace: true, balcony: true, storage: null }, details };
   const b = { ...a, id: 'detail-b', price: 2080000, details: { ...details, built_sqm: 68 } };
-  const unknown = { ...a, id: 'detail-unknown', address: 'ירמיהו 18', floor: 8,
+  const unknown = { ...a, id: 'detail-unknown', address: 'ירמיהו 18', floor: 12,
     attributes: { parking: true, elevator: true, parking_registered: null, sun_terrace: null },
     details: { ...details, building_year: null, building_kind: 'unknown' } };
-  const renewal = { ...a, id: 'detail-renewal', floor: 7, details: { ...details, building_year: null, building_kind: 'renewal' } };
+  const renewal = { ...a, id: 'detail-renewal', floor: 11, details: { ...details, building_year: null, building_kind: 'renewal' } };
   assert.equal((await ingest([a, b, unknown, renewal])).status, 200);
   const rpc = async (name, args) => JSON.parse((await (await mf.dispatchFetch('http://localhost/mcp', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   })).json()).result.content[0].text);
   const filters = { city: 'Holon', type: 'sale', min_rooms: 3, max_rooms: 3, max_price: 2700000,
-    min_floor: 6, max_building_age: 15, exclude_renewal: true, has_registered_parking: true,
+    min_floor: 10, max_building_age: 15, exclude_renewal: true, has_registered_parking: true,
     has_sun_terrace: true, has_elevator: true, sort_by: 'floor_desc' };
   const strict = await rpc('search_apartments', filters);
   assert.deepEqual(strict.apartments.map(a => a.id), ['detail-a', 'detail-b']);
   assert.deepEqual(strict.apartments[0].possible_duplicate_ids, ['detail-b']);
   assert.equal(strict.apartments[0].match_status, 'matches_stored_claims');
-  const candidates = await rpc('search_apartments', { ...filters, include_unknown: true });
-  assert.equal(candidates.apartments[0].id, 'detail-unknown');
-  assert.equal(candidates.apartments[0].match_status, 'needs_verification');
-  assert.equal(candidates.total, 3); // Renewal is still excluded.
-  const explicitNo = await rpc('search_apartments', { city: 'Holon', type: 'sale', has_sun_terrace: false });
-  assert.equal(explicitNo.total, 0); // Unknown is not false.
   await ingest([{ ...a, updated_at: '2026-10-12T14:00:00Z', details: undefined,
     description: undefined, address: 'bad summary address', floor: null, attributes: { elevator: null } }]);
   const saved = await rpc('get_apartment_details', { id: 'detail-a' });
-  assert.equal(saved.address, 'חסדאי'); assert.equal(saved.floor, 6);
+  assert.equal(saved.address, 'חסדאי'); assert.equal(saved.floor, 10);
   assert.equal(saved.attributes.elevator, true); assert.ok(saved.description);
   assert.deepEqual(saved.details, { ...details, checked_at: new Date(details.checked_at).toISOString() });
   assert.deepEqual(saved.possible_duplicate_ids, ['detail-b']);
+});
+
+test('default MCP search enforces the entire profile and supports all three cities', async () => {
+  const base = { ...item(2400000), type: 'sale', floor: 10,
+    attributes: { elevator: true, parking: true, sun_terrace: true } };
+  const variants = [
+    ['holon', {}], ['bat-yam', { city: 'בת ים', floor: 20 }], ['azor', { city: 'אזור', floor: 15 }],
+    ['rent', { type: 'rent' }], ['other-city', { city: 'תל אביב' }],
+    ['two-rooms', { rooms: 2 }], ['three-half', { rooms: 3.5 }],
+    ['low-floor', { floor: 9 }], ['unknown-floor', { floor: null }],
+    ...['elevator', 'parking', 'sun_terrace'].flatMap(key => [
+      [`no-${key}`, { attributes: { ...base.attributes, [key]: false } }],
+      [`unknown-${key}`, { attributes: { ...base.attributes, [key]: null } }],
+      [`missing-${key}`, { attributes: Object.fromEntries(Object.entries(base.attributes).filter(([k]) => k !== key)) }],
+    ]),
+  ];
+  assert.equal((await ingest(variants.map(([id, overrides]) => ({ ...base, ...overrides, id: `profile-${id}` })))).status, 200);
+  const call = async args => (await (await mf.dispatchFetch('http://localhost/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_apartments', arguments: args } }),
+  })).json()).result;
+  const result = JSON.parse((await call({})).content[0].text);
+  assert.deepEqual(result.apartments.filter(a => a.id.startsWith('profile-')).map(a => a.id),
+    ['profile-bat-yam', 'profile-azor', 'profile-holon']);
+  assert.equal(result.filters_applied.type, 'sale');
+  assert.equal(result.filters_applied.min_floor, 10);
+  assert.deepEqual(result.filters_applied.cities, ['בת ים', 'אזור', 'חולון']);
+  for (const city of ['Bat Yam', 'bat-yam', 'בת ים', 'Azor', 'אזור', 'Holon', 'חולון']) {
+    const rows = JSON.parse((await call({ city })).content[0].text).apartments;
+    assert.equal(new Set(rows.map(a => a.city)).size, 1);
+  }
+  const high = JSON.parse((await call({ min_floor: 16 })).content[0].text);
+  assert.deepEqual(high.apartments.map(a => a.id), ['profile-bat-yam']);
+  for (const args of [{ type: 'rent' }, { city: 'Tel Aviv' }, { min_rooms: 4 }, { max_rooms: 2 },
+    { max_floor: 9 }, { has_parking: false }, { has_elevator: false }, { has_sun_terrace: false }, { include_unknown: true }]) {
+    assert.equal((await call(args)).isError, true, JSON.stringify(args));
+  }
+  const broad = JSON.parse((await call({ min_floor: 0, min_rooms: 1, max_rooms: 5 })).content[0].text);
+  assert.equal(broad.total, result.total);
 });
 
 test('detail queue is authenticated, bounded and skips recently enriched listings', async () => {
   assert.equal((await mf.dispatchFetch('http://localhost/detail-queue')).status, 401);
   const queue = await (await mf.dispatchFetch('http://localhost/detail-queue?limit=1', { headers: { 'X-Ingest-Secret': 'test-only-secret' } })).json();
   assert.equal(queue.items.length, 1);
-  assert.equal(queue.items[0].id, 'test-1');
+  assert.equal(queue.items[0].details, undefined);
 });

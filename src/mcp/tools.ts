@@ -1,5 +1,6 @@
 import { searchApartments, getApartmentById, getScrapeStats, getListingHistory, getPriceDrops } from '../db/queries';
 import { SearchFilters } from '../types';
+import { applySearchProfile, SEARCH_DESCRIPTION } from './search-profile';
 
 export const TOOLS_MANIFEST = [
   {
@@ -12,18 +13,18 @@ export const TOOLS_MANIFEST = [
   },
   {
     name: 'search_apartments',
-    description: 'Search Yad2 real estate listings (rent or sale) by location, price, room count, and amenities. Returns matching apartments with price, specs, direct Yad2 link, and attributes.',
+    description: SEARCH_DESCRIPTION,
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['rent', 'sale'],
-          description: 'Type of transaction: "rent" for apartments for rent, "sale" for apartments for sale.',
+          enum: ['sale'],
+          description: 'Sale only. Applied automatically when omitted.',
         },
         city: {
           type: 'string',
-          description: 'Exact Hebrew city name, or English alias Holon, Bat Yam, Azor.',
+          description: 'Narrow to Holon, Bat Yam or Azor (Hebrew or English). Omit to search all three cities.',
         },
         neighborhood: {
           type: 'string',
@@ -47,11 +48,11 @@ export const TOOLS_MANIFEST = [
         },
         min_rooms: {
           type: 'number',
-          description: 'Minimum number of rooms (e.g., 2, 3, 4.5).',
+          description: 'Search is fixed to exactly 3 rooms; a broader lower bound cannot relax it.',
         },
         max_rooms: {
           type: 'number',
-          description: 'Maximum number of rooms.',
+          description: 'Search is fixed to exactly 3 rooms; a broader upper bound cannot relax it.',
         },
         min_sqm: {
           type: 'number',
@@ -63,11 +64,13 @@ export const TOOLS_MANIFEST = [
         },
         has_elevator: {
           type: 'boolean',
-          description: 'Filter for apartments with elevator (מעלית).',
+          enum: [true],
+          description: 'Elevator required (מעלית), automatically true.',
         },
         has_parking: {
           type: 'boolean',
-          description: 'Filter for apartments with parking (חניה).',
+          enum: [true],
+          description: 'Parking required (חניה), automatically true.',
         },
         has_mamad: {
           type: 'boolean',
@@ -82,12 +85,12 @@ export const TOOLS_MANIFEST = [
           description: 'Filter for apartments with warehouse / storage room (מחסן).',
         },
         has_registered_parking: { type: 'boolean', description: 'Parking explicitly advertised as registered in Tabu (חניה בטאבו). Unknown is excluded unless include_unknown is true.' },
-        has_sun_terrace: { type: 'boolean', description: 'An explicitly advertised sun terrace (מרפסת שמש), not any balcony.' },
-        min_floor: { type: 'integer', description: 'Minimum apartment floor, inclusive.' },
+        has_sun_terrace: { type: 'boolean', enum: [true], description: 'Sun terrace required (מרפסת שמש), automatically true; ordinary balcony alone does not qualify.' },
+        min_floor: { type: 'integer', description: 'Minimum apartment floor, inclusive; always at least 10.' },
         max_floor: { type: 'integer', description: 'Maximum apartment floor, inclusive.' },
         max_building_age: { type: 'integer', description: 'Maximum building age in years, based on an advertised building year/age. Apartment age is not building age.' },
         exclude_renewal: { type: 'boolean', description: 'Require a new building rather than a new apartment in an older renewed/TAMA building. Unknown is excluded in strict searches.' },
-        include_unknown: { type: 'boolean', description: 'Also return candidates with unconfirmed requested features, labelled needs_verification. Explicit contradictions are still excluded. Default false.' },
+        include_unknown: { type: 'boolean', enum: [false], description: 'Must be false: unknown requested features are excluded.' },
         sort_by: { type: 'string', enum: ['updated', 'floor_desc', 'price_asc'], description: 'Sort by observation time, highest floor first, or lowest price first.' },
         limit: {
           type: 'number',
@@ -132,7 +135,7 @@ export async function handleCallTool(db: D1Database, name: string, args: any) {
     case 'get_price_drops':
       return { content: [{ type: 'text', text: JSON.stringify(await getPriceDrops(db, args.city)) }] };
     case 'search_apartments': {
-      const filters: SearchFilters = {
+      let filters: SearchFilters = {
         type: args.type,
         city: args.city,
         neighborhood: args.neighborhood,
@@ -157,6 +160,9 @@ export async function handleCallTool(db: D1Database, name: string, args: any) {
         limit: args.limit || 20,
         offset: args.offset || 0,
       };
+
+      try { filters = applySearchProfile(filters); }
+      catch (error) { return { isError: true, content: [{ type: 'text', text: (error as Error).message }] }; }
 
       const { results, total } = await searchApartments(db, filters);
 

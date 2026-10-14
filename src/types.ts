@@ -53,6 +53,7 @@ export interface Apartment {
 
 export interface SearchFilters {
   type?: TransactionType;
+  cities?: string[];
   city?: string;
   neighborhood?: string;
   street?: string;
