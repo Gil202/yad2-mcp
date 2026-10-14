@@ -1,9 +1,6 @@
-name: Yad2 Daily Apartment Scraper
+name: Yad2 On-Demand Apartment Scraper
 
 on:
-  schedule:
-    # Runs every day at 02:00 UTC
-    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       mode:

@@ -19,4 +19,5 @@ still require independent verification before buying.
 
 The existing inventory and history are preserved. Detail/history lookups and
 database-wide metrics retain their existing scope. This change does not resume
-the paused GitHub scraper or run a backfill.
+the GitHub scraper or run a backfill. The scraper is manual-only via
+`workflow_dispatch`; its daily schedule was removed on 2026-10-14.
