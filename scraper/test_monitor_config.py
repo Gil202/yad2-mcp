@@ -5,12 +5,12 @@ from search_config import load_searches, card_matches_city, card_price, listing_
 
 
 class SearchConfigTests(unittest.TestCase):
-    def test_default_cities_and_both_transaction_types(self):
+    def test_default_cities_and_sale_only(self):
         with patch.dict(os.environ, {'YAD2_SEARCHES': ''}):
             searches = load_searches()
-        self.assertEqual(len(searches), 6)
+        self.assertEqual(len(searches), 3)
         self.assertEqual({s['city'] for s in searches}, {'חולון', 'בת ים', 'אזור'})
-        self.assertEqual({s['type'] for s in searches}, {'rent', 'sale'})
+        self.assertEqual({s['type'] for s in searches}, {'sale'})
 
     def test_unfiltered_or_foreign_urls_rejected(self):
         for config in ('[]', '[{"city":"חולון","type":"rent","url":"https://www.yad2.co.il/realestate/rent"}]',

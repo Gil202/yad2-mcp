@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
+from search_profile import CITIES
 
 
 def load_searches():
@@ -20,6 +21,10 @@ def load_searches():
                 parsed.username or parsed.password or parsed.path.rstrip('/') != expected or
                 not parse_qs(parsed.query).get('city')):
             raise RuntimeError('Each search requires a city, rent/sale type and city-filtered Yad2 URL')
+    # Older repository variables may still contain rental searches. Never execute those.
+    searches = [s for s in searches if s['type'] == 'sale' and s['city'] in CITIES]
+    if not searches:
+        raise RuntimeError('No sale searches in Bat Yam, Azor or Holon configured')
     return searches
 
 

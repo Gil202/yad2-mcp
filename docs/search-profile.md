@@ -17,7 +17,10 @@ Price, building age and registered parking remain available as additional
 filters; they are not implied by the current baseline profile. Listing claims
 still require independent verification before buying.
 
-The existing inventory and history are preserved. Detail/history lookups and
-database-wide metrics retain their existing scope. This change does not resume
-the GitHub scraper or run a backfill. The scraper is manual-only via
+As of 2026-10-15, the scraper also applies this profile before storage: it visits
+sale searches only, checks candidate details in memory, and uploads only confirmed
+matches. Full runs check every candidate rather than storing broad inventory and
+enriching a limited subset. Unavailable detail pages are reported and not stored.
+The user requested clearing the old inventory and history for a fresh run.
+The scraper is manual-only via
 `workflow_dispatch`; its daily schedule was removed on 2026-10-14.

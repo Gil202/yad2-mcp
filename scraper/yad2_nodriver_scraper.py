@@ -11,6 +11,7 @@ from ingest_http import ingest_config, send_payload, get_detail_queue
 from details import clean, claims, parse_detail
 from search_config import load_searches, card_matches_city, card_price, listing_page_ready
 from pagination import collect_pages
+from search_profile import candidate_matches, confirmed_match
 
 def parse_price(val):
     if not val:
@@ -267,10 +268,10 @@ def send_ingest_payload(items, rent_count, sale_count):
     return send_payload(payload)
 
 
-async def enrich_details(browser, limit=300):
-    queue = get_detail_queue(limit)
+async def enrich_details(browser, limit=300, candidates=None):
+    queue = candidates if candidates is not None else get_detail_queue(limit)
     script = Path(__file__).with_name('detail_page.js').read_text(encoding='utf-8')
-    batch, succeeded, failed = [], 0, 0
+    batch, succeeded, failed, matched = [], 0, 0, 0
     print(f'[Details] Refreshing {len(queue)} stale or missing detail pages')
     for item in queue:
         try:
@@ -286,7 +287,9 @@ async def enrich_details(browser, limit=300):
             if raw is None:
                 raise RuntimeError('Detail content unavailable')
             enriched = parse_detail(item, raw)
-            batch.append(enriched)
+            if confirmed_match(enriched):
+                batch.append(enriched)
+                matched += 1
             succeeded += 1
             print(f"[Details] {item['id']}: refreshed ({succeeded}/{len(queue)})")
         except Exception as error:
@@ -299,6 +302,7 @@ async def enrich_details(browser, limit=300):
             batch = []
     upload_detail_batch(batch, 'details_partial' if failed else 'details_success', succeeded, failed)
     print(f'[Details] Complete: {succeeded} refreshed, {failed} unavailable')
+    print(f'[Profile] Confirmed matching apartments stored: {matched}')
 
 
 def upload_detail_batch(items, status, succeeded, failed):
@@ -387,8 +391,9 @@ async def main():
                 print("\nSample Scraped Record with Attributes 2:")
                 print(json.dumps(all_items[1], ensure_ascii=False, indent=2))
 
-            send_ingest_payload(all_items, len(rent_items), len(sale_items))
-            await enrich_details(browser, max(1, min(500, int(os.getenv('DETAIL_LIMIT', '300')))))
+            candidates = [item for item in all_items if candidate_matches(item)]
+            print(f'[Profile] Checking all {len(candidates)} candidates before storage; broad inventory is not uploaded')
+            await enrich_details(browser, candidates=candidates)
         else:
             raise RuntimeError("No listings scraped; ingestion was not performed")
 
